@@ -46,7 +46,7 @@ async function main() {
 
         const sanitizeText = (text) => {
             if (!text) return null;
-            
+
             // Aggressive cleaning for CSS artifacts and code
             let cleaned = text
                 // Remove CSS class patterns
@@ -75,10 +75,10 @@ async function main() {
                 .replace(/object-fit:|object-position:/gi, '')
                 .replace(/-webkit-|-ms-|-moz-/gi, '')
                 .trim();
-            
+
             // Return null if result is empty or looks like CSS code
-            if (!cleaned || 
-                cleaned.length === 0 || 
+            if (!cleaned ||
+                cleaned.length === 0 ||
                 cleaned.startsWith('.') ||
                 cleaned.startsWith('#') ||
                 cleaned.includes('{') ||
@@ -87,35 +87,35 @@ async function main() {
                 /^\d+px/.test(cleaned)) {
                 return null;
             }
-            
+
             return cleaned;
         };
 
         const isValidText = (text) => {
             if (!text) return false;
             // Check if text contains CSS artifacts
-            return !text.includes('css-') && 
-                   !text.includes('{') && 
-                   !text.includes('}') &&
-                   !text.startsWith('.') &&
-                   !text.startsWith('#') &&
-                   text.length > 1;
+            return !text.includes('css-') &&
+                !text.includes('{') &&
+                !text.includes('}') &&
+                !text.startsWith('.') &&
+                !text.startsWith('#') &&
+                text.length > 1;
         };
 
         const isJobWithinAgeLimit = (datePosted, maxAge) => {
             if (maxAge === 'all') return true;
-            
+
             if (!datePosted) return false;
-            
+
             const now = new Date();
             let jobDate;
-            
+
             // Parse Wuzzuf date formats like "3 hours ago", "2 days ago", "1 week ago", etc.
             const timeMatch = datePosted.match(/(\d+)\s*(hour|day|week|month)s?\s*ago/i);
             if (timeMatch) {
                 const [, amount, unit] = timeMatch;
                 const numAmount = parseInt(amount);
-                
+
                 jobDate = new Date(now);
                 switch (unit.toLowerCase()) {
                     case 'hour':
@@ -136,9 +136,9 @@ async function main() {
                 jobDate = new Date(datePosted);
                 if (isNaN(jobDate.getTime())) return false;
             }
-            
+
             const ageInDays = (now - jobDate) / (1000 * 60 * 60 * 24);
-            
+
             switch (maxAge) {
                 case '7 days':
                     return ageInDays <= 7;
@@ -159,7 +159,7 @@ async function main() {
             if (cat) params.push(`filters[categories][0]=${encodeURIComponent(String(cat).trim())}`);
             if (level) params.push(`filters[career_level][0]=${encodeURIComponent(String(level).trim())}`);
             if (type) params.push(`filters[job_type][0]=${encodeURIComponent(String(type).trim())}`);
-            
+
             return params.length ? `${u.href}?${params.join('&')}` : u.href;
         };
 
@@ -216,8 +216,8 @@ async function main() {
                                 company: e.hiringOrganization?.name || null,
                                 date_posted: e.datePosted || null,
                                 description_html: e.description || null,
-                                location: e.jobLocation?.address?.addressLocality || 
-                                         e.jobLocation?.address?.addressRegion || null,
+                                location: e.jobLocation?.address?.addressLocality ||
+                                    e.jobLocation?.address?.addressRegion || null,
                                 salary: e.baseSalary?.value?.value || e.baseSalary?.value || null,
                                 job_type: e.employmentType || null,
                             };
@@ -232,7 +232,7 @@ async function main() {
 
         function findJobLinks($, base) {
             const links = new Set();
-            
+
             // Wuzzuf-specific job link patterns
             $('a[href*="/jobs/p/"]').each((_, a) => {
                 const href = $(a).attr('href');
@@ -261,13 +261,13 @@ async function main() {
         function findNextPage($, base, currentPage) {
             // Wuzzuf pagination pattern
             const nextPage = currentPage + 1;
-            
+
             // Check for next button
             const nextLink = $('a[aria-label="Next"]').attr('href') ||
-                           $('a.css-1qtdzjz[rel="next"]').attr('href') ||
-                           $('a:contains("›")').attr('href') ||
-                           $('li.next a').attr('href');
-            
+                $('a.css-1qtdzjz[rel="next"]').attr('href') ||
+                $('a:contains("›")').attr('href') ||
+                $('li.next a').attr('href');
+
             if (nextLink) {
                 return toAbs(nextLink, base);
             }
@@ -298,11 +298,11 @@ async function main() {
                     if (collectDetails && links.length > 0) {
                         const remaining = RESULTS_WANTED - saved;
                         const toEnqueue = links.slice(0, Math.max(0, remaining));
-                        
+
                         for (const link of toEnqueue) {
                             processedUrls.add(link);
                         }
-                        
+
                         if (toEnqueue.length > 0) {
                             await enqueueLinks({
                                 urls: toEnqueue,
@@ -312,7 +312,7 @@ async function main() {
                     } else if (!collectDetails && links.length > 0) {
                         const remaining = RESULTS_WANTED - saved;
                         const toPush = links.slice(0, Math.max(0, remaining));
-                        
+
                         if (toPush.length > 0) {
                             await Dataset.pushData(
                                 toPush.map((u) => ({
@@ -351,13 +351,13 @@ async function main() {
 
                         // Try JSON-LD first
                         let data = extractFromJsonLd($);
-                        
+
                         if (data && data.title) {
                             crawlerLog.info(`Successfully extracted data from JSON-LD: ${data.title}`);
                         } else {
                             crawlerLog.info('No JSON-LD data found, using HTML extraction');
                         }
-                        
+
                         if (!data) {
                             data = {};
                         }
@@ -366,58 +366,43 @@ async function main() {
                         crawlerLog.debug('Starting HTML extraction...');
                         if (!data.title) {
                             data.title = $('h1.css-f9uh36, h1[data-qa="job-title"]').first().text().trim() ||
-                                        $('h1').first().text().trim() || null;
+                                $('h1').first().text().trim() || null;
                         }
 
-                        if (!data.company) {
-                            // Extract company name - find link with /jobs/careers/ in href
-                            $('a[href*="/jobs/careers/"]').each((_, el) => {
-                                const href = $(el).attr('href');
-                                const text = $(el).text().trim();
-                                
-                                // Validate: must have text, no CSS, reasonable length, contains /jobs/careers/
-                                if (text && 
-                                    text.length > 1 && 
-                                    text.length < 100 && 
-                                    !text.includes('css-') && 
-                                    !text.includes('{') && 
-                                    !text.includes('}') &&
-                                    !text.startsWith('.') &&
-                                    href && href.includes('/jobs/careers/')) {
-                                    data.company = text;
-                                    return false; // Break the loop
+                        if (!data.company || !data.location) {
+                            // Extract company and location from strong.css-1vlp604
+                            // First element is company, second is location
+                            const strongElements = $('strong.css-1vlp604');
+
+                            if (!data.company && strongElements.length >= 1) {
+                                const companyText = $(strongElements[0]).text().trim();
+                                if (companyText && companyText.length > 1 && companyText.length < 100 && isValidText(companyText)) {
+                                    data.company = companyText;
                                 }
-                            });
-                            
-                            data.company = data.company || null;
-                        }
+                            }
 
-                        if (!data.location) {
-                            // Look for location in structured way
-                            const locationCandidates = [];
-                            
-                            // Try company info section - location usually after company name and dash
-                            $('strong, div, span').each((_, el) => {
-                                const text = $(el).text().trim();
-                                // Match pattern: "Company Name - City, Country"
-                                const match = text.match(/[-–—]\s*([^-–—]+(?:,\s*[^-–—]+)?(?:,\s*Egypt)?)/i);
-                                if (match && match[1]) {
-                                    const location = match[1].trim();
-                                    if (location.length > 3 && location.length < 100 && !location.includes('css-')) {
-                                        locationCandidates.push(location);
+                            if (!data.location && strongElements.length >= 2) {
+                                const locationText = $(strongElements[1]).text().trim();
+                                if (locationText && locationText.length > 1 && locationText.length < 100 && isValidText(locationText)) {
+                                    data.location = locationText;
+                                }
+                            }
+
+                            // Fallback: Try link with /jobs/careers/ for company if not found
+                            if (!data.company) {
+                                $('a[href*="/jobs/careers/"]').each((_, el) => {
+                                    const href = $(el).attr('href');
+                                    const text = $(el).text().trim();
+
+                                    if (text && text.length > 1 && text.length < 100 && isValidText(text) && href && href.includes('/jobs/careers/')) {
+                                        data.company = text;
+                                        return false; // Break the loop
                                     }
-                                }
-                            });
-                            
-                            // Also try specific selectors
-                            $('span[class*="location"], div[class*="location"]').each((_, el) => {
-                                const text = $(el).text().trim();
-                                if (text && text.length > 3 && text.length < 100 && !text.includes('css-')) {
-                                    locationCandidates.push(text);
-                                }
-                            });
-                            
-                            data.location = locationCandidates.length > 0 ? locationCandidates[0] : null;
+                                });
+                            }
+
+                            data.company = data.company || null;
+                            data.location = data.location || null;
                         }
 
                         if (!data.salary) {
@@ -429,7 +414,7 @@ async function main() {
                                 'div:contains("Salary") + div',
                                 'div:contains("EGP")'
                             ];
-                            
+
                             for (const selector of salarySelectors) {
                                 const salaryEl = $(selector).first();
                                 if (salaryEl.length) {
@@ -440,7 +425,7 @@ async function main() {
                                     }
                                 }
                             }
-                            
+
                             data.salary = data.salary || 'Not disclosed';
                         }
 
@@ -456,11 +441,11 @@ async function main() {
                                 'Work From Home': /Work.*From.*Home/i,
                                 'Shift Based': /Shift.*Based/i
                             };
-                            
+
                             $('a[href*="-Jobs"]').each((_, el) => {
                                 const href = $(el).attr('href') || '';
                                 const text = $(el).text().trim();
-                                
+
                                 // Check if href matches any pattern
                                 for (const [typeName, pattern] of Object.entries(jobTypePatterns)) {
                                     if (pattern.test(href) && !jobTypes.includes(typeName)) {
@@ -472,7 +457,7 @@ async function main() {
                                     }
                                 }
                             });
-                            
+
                             data.job_type = jobTypes.length > 0 ? jobTypes.join(' / ') : null;
                         }
 
@@ -487,7 +472,7 @@ async function main() {
                                 'div:contains("days ago")',
                                 'time'
                             ];
-                            
+
                             for (const selector of dateSelectors) {
                                 const dateEl = $(selector).first();
                                 if (dateEl.length) {
@@ -498,53 +483,62 @@ async function main() {
                                     }
                                 }
                             }
-                            
+
                             data.date_posted = data.date_posted || null;
                         }
+
+                        // Extract job category from ul.css-h5dsne
+                        const jobCategories = [];
+                        $('ul.css-h5dsne li a, ul.css-h5dsne a').each((_, el) => {
+                            const categoryText = $(el).text().trim();
+                            if (categoryText && categoryText.length > 1 && categoryText.length < 100 && isValidText(categoryText)) {
+                                jobCategories.push(categoryText);
+                            }
+                        });
+                        data.job_category = jobCategories.length > 0 ? jobCategories : null;
 
                         // Extract full description - CRITICAL: Remove style tags and related jobs
                         if (!data.description_html) {
                             // Remove all style tags and related job sections first
                             $('style, script, noscript').remove();
                             $('ul.css-1b1zfbw').remove(); // Related jobs section
-                            $('ul.css-h5dsne').remove(); // Another related section
                             $('ul.css-1e3unnb').remove(); // Stats section
                             $('div[class*="similar"], div[class*="related"]').remove();
-                            
+
                             // Now try to find actual job description
                             let descriptionParts = [];
-                            
+
                             // Find UL/OL tags that are NOT the removed sections
                             $('ul, ol').each((_, el) => {
                                 const $el = $(el);
                                 // Skip if has specific classes we want to avoid
                                 const classAttr = $el.attr('class') || '';
-                                if (classAttr && (classAttr.includes('css-1b1zfbw') || 
-                                                  classAttr.includes('css-h5dsne') || 
-                                                  classAttr.includes('css-1e3unnb'))) {
+                                if (classAttr && (classAttr.includes('css-1b1zfbw') ||
+                                    classAttr.includes('css-h5dsne') ||
+                                    classAttr.includes('css-1e3unnb'))) {
                                     return; // Skip
                                 }
-                                
+
                                 const html = $el.html();
                                 const text = $el.text().trim();
-                                
+
                                 // Valid description list: has actual text, not too short
                                 if (text && text.length > 20 && !text.includes('Viewed') && !text.includes('Not Selected')) {
                                     descriptionParts.push(`<${el.name}>${html}</${el.name}>`);
                                 }
                             });
-                            
+
                             // Also get paragraphs
                             $('p').each((_, el) => {
                                 const $el = $(el);
                                 const html = $el.html();
                                 const text = $el.text().trim();
-                                
+
                                 if (text && text.length > 20) {
                                     descriptionParts.push(`<p>${html}</p>`);
                                 }
                             });
-                            
+
                             if (descriptionParts.length > 0) {
                                 data.description_html = descriptionParts.join('\n');
                             }
@@ -574,7 +568,7 @@ async function main() {
                             'span[class*="career"]',
                             'div:contains("Career Level") + div'
                         ];
-                        
+
                         for (const pattern of careerLevelPatterns) {
                             const levelEl = $(pattern).first();
                             if (levelEl.length) {
@@ -586,11 +580,13 @@ async function main() {
                             }
                         }
 
-                        // Extract skills
+                        // Extract skills from div.css-qe7mba
                         const skills = [];
-                        $('div.css-158icaa a, a[data-qa="skill-tag"]').each((_, el) => {
+                        $('div.css-qe7mba a, div.css-qe7mba span, a[data-qa="skill-tag"]').each((_, el) => {
                             const skill = $(el).text().trim();
-                            if (skill) skills.push(skill);
+                            if (skill && skill.length > 0 && skill.length < 100 && isValidText(skill)) {
+                                skills.push(skill);
+                            }
                         });
 
                         // Sanitize all text fields to remove CSS classes and HTML artifacts
@@ -600,6 +596,7 @@ async function main() {
                             location: sanitizeText(data.location),
                             salary: sanitizeText(data.salary) || 'Not disclosed',
                             job_type: sanitizeText(data.job_type),
+                            job_category: data.job_category ? data.job_category.map(c => sanitizeText(c)).filter(Boolean) : null,
                             career_level: sanitizeText(careerLevelText),
                             date_posted: sanitizeText(data.date_posted),
                             skills: skills.length > 0 ? skills.map(s => sanitizeText(s)).filter(Boolean) : null,
@@ -608,7 +605,7 @@ async function main() {
                             url: request.url,
                             scraped_at: new Date().toISOString(),
                         };
-                        
+
                         // Final validation - skip if critical fields contain CSS artifacts
                         if (item.title && !isValidText(item.title)) {
                             crawlerLog.warning(`Skipping job with invalid title containing CSS: ${item.title}`);
@@ -618,7 +615,7 @@ async function main() {
                             crawlerLog.warning(`Skipping job with invalid company containing CSS: ${item.company}`);
                             return;
                         }
-                        
+
                         // Ensure minimum data quality
                         if (!item.title) {
                             crawlerLog.warning(`Skipping job without title: ${request.url}`);
@@ -634,7 +631,7 @@ async function main() {
                             date_posted: !!item.date_posted
                         };
                         crawlerLog.debug(`Extraction quality: ${JSON.stringify(extractionQuality)}`);
-                        
+
                         // Warn if critical fields are missing
                         if (!item.company) {
                             crawlerLog.warning(`Missing company name for job: ${item.title || 'Unknown'}`);
@@ -642,7 +639,7 @@ async function main() {
                         if (!item.description_html) {
                             crawlerLog.warning(`Missing description for job: ${item.title || 'Unknown'}`);
                         }
-                        
+
                         // Filter out jobs that are too old
                         if (!isJobWithinAgeLimit(item.date_posted, maxJobAge)) {
                             crawlerLog.info(`Skipping job "${item.title}" - posted ${item.date_posted} (outside age limit: ${maxJobAge})`);
