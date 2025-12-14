@@ -432,7 +432,23 @@ async function main() {
                                 const parentText = companyLink.parent().text().trim();
                                 const companyName = companyLink.text().trim();
                                 let potentialLoc = parentText.replace(companyName, '').trim();
-                                potentialLoc = potentialLoc.replace(/^[-–—]\s*/, '').replace(/Posted.*$/i, '').replace(/Block.*$/i, '').replace(/Viewed.*$/i, '').trim();
+
+                                // Refinement: Split by delimiters to isolate location
+                                const parts = potentialLoc.split(/[-–—]/).map(p => p.trim()).filter(Boolean);
+                                let bestMatch = null;
+
+                                // Check each part for location pattern
+                                for (const part of parts) {
+                                    const clean = part.replace(/Posted.*$/i, '').replace(/Block.*$/i, '').replace(/Viewed.*$/i, '').trim();
+                                    if (clean.length > 2 && clean.length < 50 && isValidText(clean)) {
+                                        if (clean.includes(',') || /Cairo|Giza|Alexandria|Egypt|October|Zayed|Maadi|Nasr City/i.test(clean)) {
+                                            bestMatch = clean;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                potentialLoc = bestMatch || potentialLoc.replace(/^[-–—]\s*/, '').replace(/Posted.*$/i, '').replace(/Block.*$/i, '').replace(/Viewed.*$/i, '').trim();
 
                                 if (potentialLoc.length > 3 && potentialLoc.length < 50 && isValidText(potentialLoc)) {
                                     if (potentialLoc.includes(',') || /Cairo|Giza|Alexandria|Egypt|October|Zayed|Maadi|Nasr City/i.test(potentialLoc)) {
@@ -719,6 +735,11 @@ async function main() {
                                     return false;
                                 }
                             });
+                        }
+
+                        // Clean query parameters to keep only the logo URL (e.g. remove ?v=...)
+                        if (companyLogo && companyLogo.includes('?')) {
+                            companyLogo = companyLogo.split('?')[0];
                         }
 
                         // URL normalization
