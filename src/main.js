@@ -402,25 +402,53 @@ async function main() {
                         }
 
                         if (!data.location) {
-                            // Look for location near company name using specific patterns
+                            // Look for location using specific selectors
                             let locationFound = null;
 
-                            // Method 1: Look for links to location-based job searches
-                            $('a[href*="-Egypt"], a[href*="-Cairo"], a[href*="-Giza"], a[href*="-Alexandria"]').each((_, el) => {
+                            // Helper to validate location text
+                            const isValidLocation = (text) => {
+                                if (!text || text.length < 2 || text.length > 80) return false;
+                                const lower = text.toLowerCase();
+                                // Filter out invalid patterns
+                                if (lower.includes('other jobs') ||
+                                    lower.includes('work role') ||
+                                    lower.includes('webkit') ||
+                                    lower.includes('css') ||
+                                    lower.includes('browse') ||
+                                    lower.includes('search') ||
+                                    lower.includes('apply') ||
+                                    text.includes('{') ||
+                                    text.includes('}') ||
+                                    text.includes('[') ||
+                                    text.includes(']')) {
+                                    return false;
+                                }
+                                return true;
+                            };
+
+                            // Priority 1: Use the specific CSS selector span.css-16x61xq
+                            $('span.css-16x61xq').each((_, el) => {
                                 const text = $(el).text().trim();
-                                const href = $(el).attr('href') || '';
-                                // Must be a location link, not a job type link
-                                if (text && text.length > 2 && text.length < 50 &&
-                                    !href.includes('-Jobs') && !href.includes('/careers/') &&
-                                    !text.toLowerCase().includes('webkit') &&
-                                    !text.toLowerCase().includes('css') &&
-                                    !text.includes('{') && !text.includes(':')) {
+                                if (isValidLocation(text)) {
                                     locationFound = text;
                                     return false; // Break
                                 }
                             });
 
-                            // Method 2: Extract from company link parent text after dash
+                            // Priority 2: Look for location links with city/country patterns
+                            if (!locationFound) {
+                                $('a[href*="-Egypt"], a[href*="-Cairo"], a[href*="-Giza"], a[href*="-Alexandria"]').each((_, el) => {
+                                    const text = $(el).text().trim();
+                                    const href = $(el).attr('href') || '';
+                                    // Must be a location link, not a job type link
+                                    if (isValidLocation(text) && !href.includes('-Jobs') && !href.includes('/careers/')) {
+                                        locationFound = text;
+                                        return false; // Break
+                                    }
+                                });
+                            }
+
+                            // Priority 3: Extract from company link parent text after dash
                             if (!locationFound) {
                                 const companyLink = $('a[href*="/jobs/careers/"]').first();
                                 if (companyLink.length) {
@@ -432,10 +460,7 @@ async function main() {
                                     const match = afterCompany.match(/^\s*[-–—]\s*([A-Za-z][A-Za-z\s,]+)/i);
                                     if (match && match[1]) {
                                         const loc = match[1].trim();
-                                        if (loc.length > 2 && loc.length < 50 &&
-                                            !loc.toLowerCase().includes('webkit') &&
-                                            !loc.toLowerCase().includes('css') &&
-                                            !loc.includes('{') && !loc.includes(':')) {
+                                        if (isValidLocation(loc)) {
                                             locationFound = loc;
                                         }
                                     }
@@ -470,33 +495,47 @@ async function main() {
                         }
 
                         if (!data.job_type) {
-                            // Extract job type from links with specific href patterns
+                            // Priority 1: Use specific CSS selector span.css-uc9rga.eoyjyou0
                             const jobTypes = [];
-                            const jobTypePatterns = {
-                                'Full Time': /Full-Time-Jobs/i,
-                                'Part Time': /Part-Time-Jobs/i,
-                                'Freelance': /Freelance.*Jobs/i,
-                                'Remote': /Remote-Jobs/i,
-                                'Internship': /Internship.*Jobs/i,
-                                'Work From Home': /Work.*From.*Home/i,
-                                'Shift Based': /Shift.*Based/i
-                            };
 
-                            $('a[href*="-Jobs"]').each((_, el) => {
-                                const href = $(el).attr('href') || '';
+                            $('span.css-uc9rga.eoyjyou0, span.css-uc9rga').each((_, el) => {
                                 const text = $(el).text().trim();
-
-                                // Check if href matches any pattern
-                                for (const [typeName, pattern] of Object.entries(jobTypePatterns)) {
-                                    if (pattern.test(href) && !jobTypes.includes(typeName)) {
-                                        // Verify the text is reasonable
-                                        if (text && text.length < 30 && !text.includes('css-')) {
-                                            jobTypes.push(typeName);
-                                        }
-                                        break;
+                                if (text && text.length > 1 && text.length < 50 &&
+                                    !text.toLowerCase().includes('css') &&
+                                    !text.toLowerCase().includes('webkit') &&
+                                    !text.includes('{') && !text.includes('}')) {
+                                    if (!jobTypes.includes(text)) {
+                                        jobTypes.push(text);
                                     }
                                 }
                             });
+
+                            // Priority 2: Fallback to link patterns
+                            if (jobTypes.length === 0) {
+                                const jobTypePatterns = {
+                                    'Full Time': /Full-Time-Jobs/i,
+                                    'Part Time': /Part-Time-Jobs/i,
+                                    'Freelance': /Freelance.*Jobs/i,
+                                    'Remote': /Remote-Jobs/i,
+                                    'Internship': /Internship.*Jobs/i,
+                                    'Work From Home': /Work.*From.*Home/i,
+                                    'Shift Based': /Shift.*Based/i
+                                };
+
+                                $('a[href*="-Jobs"]').each((_, el) => {
+                                    const href = $(el).attr('href') || '';
+                                    const text = $(el).text().trim();
+
+                                    for (const [typeName, pattern] of Object.entries(jobTypePatterns)) {
+                                        if (pattern.test(href) && !jobTypes.includes(typeName)) {
+                                            if (text && text.length < 30 && !text.includes('css-')) {
+                                                jobTypes.push(typeName);
+                                            }
+                                            break;
+                                        }
+                                    }
+                                });
+                            }
 
                             data.job_type = jobTypes.length > 0 ? jobTypes.join(' / ') : null;
                         }
