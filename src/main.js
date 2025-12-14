@@ -46,14 +46,60 @@ async function main() {
 
         const sanitizeText = (text) => {
             if (!text) return null;
-            // Remove CSS class names, HTML artifacts, and clean up
-            return text
-                .replace(/css-[a-z0-9]+/gi, '') // Remove CSS classes
-                .replace(/\[object\s+Object\]/gi, '') // Remove object artifacts
-                .replace(/<[^>]*>/g, '') // Remove HTML tags
-                .replace(/\s+/g, ' ') // Normalize whitespace
-                .replace(/\u00a0/g, ' ') // Replace non-breaking spaces
+            
+            // Aggressive cleaning for CSS artifacts and code
+            let cleaned = text
+                // Remove CSS class patterns
+                .replace(/\.?css-[a-z0-9]+\s*\{[^}]*\}/gi, '')
+                .replace(/css-[a-z0-9]+/gi, '')
+                // Remove style/script content
+                .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                // Remove object artifacts
+                .replace(/\[object\s+Object\]/gi, '')
+                // Remove HTML tags
+                .replace(/<[^>]*>/g, '')
+                // Remove CSS properties patterns
+                .replace(/\{[^}]*:[^}]*\}/g, '')
+                .replace(/\.?\{[^}]*\}/g, '')
+                // Remove data attributes
+                .replace(/data-[a-z-]+=\"[^"]*\"/gi, '')
+                // Normalize whitespace
+                .replace(/\s+/g, ' ')
+                .replace(/\u00a0/g, ' ')
+                .replace(/&nbsp;/g, ' ')
+                .replace(/&#x[0-9A-F]+;/gi, ' ') // Remove HTML entities
+                .replace(/&[a-z]+;/gi, ' ')
+                // Remove common CSS artifacts
+                .replace(/height:|width:|margin:|padding:|flex:|display:/gi, '')
+                .replace(/object-fit:|object-position:/gi, '')
+                .replace(/-webkit-|-ms-|-moz-/gi, '')
                 .trim();
+            
+            // Return null if result is empty or looks like CSS code
+            if (!cleaned || 
+                cleaned.length === 0 || 
+                cleaned.startsWith('.') ||
+                cleaned.startsWith('#') ||
+                cleaned.includes('{') ||
+                cleaned.includes('}') ||
+                /^[.#][\w-]+$/.test(cleaned) ||
+                /^\d+px/.test(cleaned)) {
+                return null;
+            }
+            
+            return cleaned;
+        };
+
+        const isValidText = (text) => {
+            if (!text) return false;
+            // Check if text contains CSS artifacts
+            return !text.includes('css-') && 
+                   !text.includes('{') && 
+                   !text.includes('}') &&
+                   !text.startsWith('.') &&
+                   !text.startsWith('#') &&
+                   text.length > 1;
         };
 
         const isJobWithinAgeLimit = (datePosted, maxAge) => {
@@ -324,32 +370,54 @@ async function main() {
                         }
 
                         if (!data.company) {
-                            // Try multiple selectors for company name
-                            const companySelectors = [
-                                'div.css-d7j1kk a',
-                                'a[href*="/jobs/careers/"]',
-                                'div[class*="company"] a',
-                                'h2 + div a',
-                                '.css-17s97q8'
-                            ];
-                            
-                            for (const selector of companySelectors) {
-                                const companyEl = $(selector).first();
-                                if (companyEl.length) {
-                                    const companyText = companyEl.text().trim();
-                                    if (companyText && companyText.length > 0 && companyText !== '-') {
-                                        data.company = companyText;
-                                        break;
-                                    }
+                            // Extract company name - find link with /jobs/careers/ in href
+                            $('a[href*="/jobs/careers/"]').each((_, el) => {
+                                const href = $(el).attr('href');
+                                const text = $(el).text().trim();
+                                
+                                // Validate: must have text, no CSS, reasonable length, contains /jobs/careers/
+                                if (text && 
+                                    text.length > 1 && 
+                                    text.length < 100 && 
+                                    !text.includes('css-') && 
+                                    !text.includes('{') && 
+                                    !text.includes('}') &&
+                                    !text.startsWith('.') &&
+                                    href && href.includes('/jobs/careers/')) {
+                                    data.company = text;
+                                    return false; // Break the loop
                                 }
-                            }
+                            });
                             
                             data.company = data.company || null;
                         }
 
                         if (!data.location) {
-                            data.location = $('span.css-5wys0k, [data-qa="job-location"]').first().text().trim() ||
-                                          $('div:contains("Location")').next().text().trim() || null;
+                            // Look for location in structured way
+                            const locationCandidates = [];
+                            
+                            // Try company info section - location usually after company name and dash
+                            $('strong, div, span').each((_, el) => {
+                                const text = $(el).text().trim();
+                                // Match pattern: "Company Name - City, Country"
+                                const match = text.match(/[-–—]\s*([^-–—]+(?:,\s*[^-–—]+)?(?:,\s*Egypt)?)/i);
+                                if (match && match[1]) {
+                                    const location = match[1].trim();
+                                    if (location.length > 3 && location.length < 100 && !location.includes('css-')) {
+                                        locationCandidates.push(location);
+                                    }
+                                }
+                            });
+                            
+                            // Also try specific selectors
+                            $('span[class*="location"], div[class*="location"]').each((_, el) => {
+                                const text = $(el).text().trim();
+                                if (text && text.length > 3 && text.length < 100 && !text.includes('css-')) {
+                                    locationCandidates.push(text);
+                                }
+                            });
+                            
+                            data.location = locationCandidates.length > 0 ? locationCandidates[0] : null;
                         }
 
                         if (!data.salary) {
@@ -377,29 +445,35 @@ async function main() {
                         }
 
                         if (!data.job_type) {
-                            // Extract job type - look for employment type links/spans
-                            const jobTypePatterns = [
-                                'a[href*="Full-Time-Jobs"]',
-                                'a[href*="Part-Time-Jobs"]',
-                                'a[href*="Freelance"]',
-                                'a[href*="Remote-Jobs"]',
-                                'a[href*="Internship"]',
-                                'span.css-1ve4b75'
-                            ];
+                            // Extract job type from links with specific href patterns
+                            const jobTypes = [];
+                            const jobTypePatterns = {
+                                'Full Time': /Full-Time-Jobs/i,
+                                'Part Time': /Part-Time-Jobs/i,
+                                'Freelance': /Freelance.*Jobs/i,
+                                'Remote': /Remote-Jobs/i,
+                                'Internship': /Internship.*Jobs/i,
+                                'Work From Home': /Work.*From.*Home/i,
+                                'Shift Based': /Shift.*Based/i
+                            };
                             
-                            const foundTypes = [];
-                            for (const pattern of jobTypePatterns) {
-                                $(pattern).each((_, el) => {
-                                    const text = $(el).text().trim();
-                                    if (text && text.length > 0 && text.length < 30) {
-                                        foundTypes.push(text);
+                            $('a[href*="-Jobs"]').each((_, el) => {
+                                const href = $(el).attr('href') || '';
+                                const text = $(el).text().trim();
+                                
+                                // Check if href matches any pattern
+                                for (const [typeName, pattern] of Object.entries(jobTypePatterns)) {
+                                    if (pattern.test(href) && !jobTypes.includes(typeName)) {
+                                        // Verify the text is reasonable
+                                        if (text && text.length < 30 && !text.includes('css-')) {
+                                            jobTypes.push(typeName);
+                                        }
+                                        break;
                                     }
-                                });
-                            }
+                                }
+                            });
                             
-                            // Get unique types
-                            const uniqueTypes = [...new Set(foundTypes)];
-                            data.job_type = uniqueTypes.length > 0 ? uniqueTypes.join(', ') : null;
+                            data.job_type = jobTypes.length > 0 ? jobTypes.join(' / ') : null;
                         }
 
                         if (!data.date_posted) {
@@ -428,45 +502,63 @@ async function main() {
                             data.date_posted = data.date_posted || null;
                         }
 
-                        // Extract full description
+                        // Extract full description - CRITICAL: Remove style tags and related jobs
                         if (!data.description_html) {
-                            const descSelectors = [
-                                'div.css-1uobp1k',
-                                'div[class*="job-description"]',
-                                'div[class*="description"]',
-                                'div.css-8g6gju',
-                                '.job-description',
-                                'section[class*="description"]',
-                                'div[class*="details"] > div'
-                            ];
+                            // Remove all style tags and related job sections first
+                            $('style, script, noscript').remove();
+                            $('ul.css-1b1zfbw').remove(); // Related jobs section
+                            $('ul.css-h5dsne').remove(); // Another related section
+                            $('ul.css-1e3unnb').remove(); // Stats section
+                            $('div[class*="similar"], div[class*="related"]').remove();
                             
-                            for (const selector of descSelectors) {
-                                const descSection = $(selector).first();
-                                if (descSection.length) {
-                                    const html = descSection.html();
-                                    if (html && html.trim().length > 50) {
-                                        data.description_html = String(html).trim();
-                                        break;
-                                    }
-                                }
-                            }
+                            // Now try to find actual job description
+                            let descriptionParts = [];
                             
-                            // If still not found, try getting all paragraphs and list items
-                            if (!data.description_html) {
-                                const mainContent = $('main, article, [role="main"]').first();
-                                if (mainContent.length) {
-                                    const paragraphs = mainContent.find('p, ul, ol').slice(0, 10);
-                                    if (paragraphs.length > 0) {
-                                        let combinedHtml = '';
-                                        paragraphs.each((_, el) => {
-                                            combinedHtml += $(el).prop('outerHTML') || '';
-                                        });
-                                        if (combinedHtml.length > 50) {
-                                            data.description_html = combinedHtml;
-                                        }
-                                    }
+                            // Find UL/OL tags that are NOT the removed sections
+                            $('ul, ol').each((_, el) => {
+                                const $el = $(el);
+                                // Skip if has specific classes we want to avoid
+                                const classAttr = $el.attr('class') || '';
+                                if (classAttr && (classAttr.includes('css-1b1zfbw') || 
+                                                  classAttr.includes('css-h5dsne') || 
+                                                  classAttr.includes('css-1e3unnb'))) {
+                                    return; // Skip
                                 }
+                                
+                                const html = $el.html();
+                                const text = $el.text().trim();
+                                
+                                // Valid description list: has actual text, not too short
+                                if (text && text.length > 20 && !text.includes('Viewed') && !text.includes('Not Selected')) {
+                                    descriptionParts.push(`<${el.name}>${html}</${el.name}>`);
+                                }
+                            });
+                            
+                            // Also get paragraphs
+                            $('p').each((_, el) => {
+                                const $el = $(el);
+                                const html = $el.html();
+                                const text = $el.text().trim();
+                                
+                                if (text && text.length > 20) {
+                                    descriptionParts.push(`<p>${html}</p>`);
+                                }
+                            });
+                            
+                            if (descriptionParts.length > 0) {
+                                data.description_html = descriptionParts.join('\n');
                             }
+                        }
+
+                        // Clean description HTML - remove any remaining style tags
+                        if (data.description_html) {
+                            // Remove style tags with regex
+                            data.description_html = data.description_html
+                                .replace(/<style[^>]*>.*?<\/style>/gis, '')
+                                .replace(/<script[^>]*>.*?<\/script>/gis, '')
+                                .replace(/class="css-[a-z0-9]+"/gi, '')
+                                .replace(/data-emotion="[^"]*"/gi, '')
+                                .trim();
                         }
 
                         data.description_text = data.description_html ? cleanText(data.description_html) : null;
@@ -516,6 +608,22 @@ async function main() {
                             url: request.url,
                             scraped_at: new Date().toISOString(),
                         };
+                        
+                        // Final validation - skip if critical fields contain CSS artifacts
+                        if (item.title && !isValidText(item.title)) {
+                            crawlerLog.warning(`Skipping job with invalid title containing CSS: ${item.title}`);
+                            return;
+                        }
+                        if (item.company && !isValidText(item.company)) {
+                            crawlerLog.warning(`Skipping job with invalid company containing CSS: ${item.company}`);
+                            return;
+                        }
+                        
+                        // Ensure minimum data quality
+                        if (!item.title) {
+                            crawlerLog.warning(`Skipping job without title: ${request.url}`);
+                            return;
+                        }
 
                         // Log extraction quality
                         const extractionQuality = {

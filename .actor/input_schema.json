@@ -1,90 +1,63 @@
 {
   "title": "Wuzzuf Jobs Scraper",
-  "description": "Extract job listings from Wuzzuf.net for Egypt and MENA region. Search by keyword, location, category, career level, and job type. Supports JSON API with HTML fallback for reliable data extraction.",
+  "description": "Scrape jobs from Wuzzuf. Provide keyword/location OR a Wuzzuf search URL (startUrl). Actor paginates and optionally scrapes detail pages.",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
     "startUrl": {
       "title": "Start URL",
       "type": "string",
-      "description": "Custom Wuzzuf search URL to start scraping from. If provided, overrides keyword/location/category filters.",
-      "editor": "textfield",
-      "example": "https://wuzzuf.net/search/jobs/?q=developer"
+      "description": "Start scraping from a specific Wuzzuf search URL. If provided, this will be used instead of Keyword/Location.",
+      "editor": "textfield"
     },
     "keyword": {
-      "title": "Job Keyword",
+      "title": "Keyword (if not using Start URL)",
       "type": "string",
-      "description": "Search for specific job titles or keywords (e.g., 'Software Engineer', 'Accountant', 'Marketing Manager').",
+      "description": "Job search keyword(s), e.g., 'Software Developer', 'Marketing Manager', 'Data Analyst'.",
       "editor": "textfield",
-      "prefill": "software engineer",
-      "example": "data scientist"
+      "prefill": "software engineer"
     },
     "location": {
-      "title": "Location",
+      "title": "Location (if not using Start URL)",
       "type": "string",
-      "description": "Filter jobs by location (e.g., 'Cairo', 'Alexandria', 'Dubai', 'Remote').",
-      "editor": "textfield",
-      "example": "Cairo"
-    },
-    "category": {
-      "title": "Job Category",
-      "type": "string",
-      "description": "Filter by job category (e.g., 'IT/Software Development', 'Engineering', 'Marketing/PR/Advertising', 'Accounting/Finance').",
-      "editor": "textfield",
-      "example": "IT/Software Development"
-    },
-    "careerLevel": {
-      "title": "Career Level",
-      "type": "string",
-      "description": "Filter by experience level (e.g., 'Entry Level', 'Experienced', 'Manager', 'Senior Management').",
-      "editor": "textfield",
-      "example": "Experienced"
-    },
-    "jobType": {
-      "title": "Job Type",
-      "type": "string",
-      "description": "Filter by employment type (e.g., 'Full Time', 'Part Time', 'Freelance', 'Remote', 'Internship').",
-      "editor": "textfield",
-      "example": "Full Time"
+      "description": "Location to filter jobs by, e.g., 'Cairo', 'Alexandria'. Leave empty for all locations.",
+      "editor": "textfield"
     },
     "maxJobAge": {
-      "title": "Maximum Job Age",
+      "title": "Maximum job age",
       "type": "string",
-      "description": "Filter jobs by posting date. Only include jobs posted within this time frame (e.g., '7 days', '30 days', '90 days', 'all').",
-      "editor": "select",
+      "description": "Filter jobs by how old they are. Only jobs posted within this time frame will be collected.",
       "enum": ["7 days", "30 days", "90 days", "all"],
-      "default": "all",
-      "example": "30 days"
-    },
-    "collectDetails": {
-      "title": "Collect Full Job Details",
-      "type": "boolean",
-      "description": "Enable to scrape complete job descriptions, requirements, and additional details from individual job pages.",
-      "editor": "checkbox",
-      "default": true
+      "default": "30 days",
+      "editor": "select"
     },
     "results_wanted": {
-      "title": "Maximum Results",
+      "title": "Maximum number of jobs",
       "type": "integer",
-      "description": "Maximum number of job listings to scrape. Set a reasonable limit to control runtime and costs.",
+      "description": "The maximum number of jobs to collect. Leave empty to collect all available jobs.",
       "minimum": 1,
-      "maximum": 1000,
       "default": 100,
       "editor": "number"
     },
     "max_pages": {
-      "title": "Maximum Pages",
+      "title": "Maximum number of pages",
       "type": "integer",
-      "description": "Maximum number of search result pages to process. Each page typically contains 15 jobs.",
+      "description": "A safety cap on the number of search result pages to visit.",
       "minimum": 1,
-      "maximum": 100,
       "editor": "number",
       "default": 20
     },
+        "collectDetails": {
+      "title": "Collect job details",
+      "type": "boolean",
+      "description": "If enabled, scraper opens job detail pages for full description.",
+      "editor": "checkbox",
+      "default": true
+    },
     "proxyConfiguration": {
-      "title": "Proxy Configuration",
+      "title": "Proxy configuration",
       "type": "object",
-      "description": "Proxy settings for reliable scraping. Residential proxies recommended for best results.",
+      "description": "Use Apify Proxy (recommended for Wuzzuf).",
       "editor": "proxy",
       "default": {
         "useApifyProxy": true,
