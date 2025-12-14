@@ -426,24 +426,31 @@ async function main() {
                                 return true;
                             };
 
-                            // Priority 1: Use the specific CSS selector span.css-16x61xq
-                            $('span.css-16x61xq').each((_, el) => {
-                                const text = $(el).text().trim();
-                                if (isValidLocation(text)) {
-                                    locationFound = text;
-                                    return false; // Break
-                                }
-                            });
+                            // Method 1: Robust extraction from text near company link (most stable)
+                            const companyLink = $('a[href*="/jobs/careers/"]').first();
+                            if (companyLink.length) {
+                                const parentText = companyLink.parent().text().trim();
+                                const companyName = companyLink.text().trim();
+                                let potentialLoc = parentText.replace(companyName, '').trim();
+                                potentialLoc = potentialLoc.replace(/^[-–—]\s*/, '').replace(/Posted.*$/i, '').replace(/Block.*$/i, '').replace(/Viewed.*$/i, '').trim();
 
-                            // Priority 2: Look for location links with city/country patterns
+                                if (potentialLoc.length > 3 && potentialLoc.length < 50 && isValidText(potentialLoc)) {
+                                    if (potentialLoc.includes(',') || /Cairo|Giza|Alexandria|Egypt|October|Zayed|Maadi|Nasr City/i.test(potentialLoc)) {
+                                        locationFound = potentialLoc;
+                                    }
+                                }
+                            }
+
+                            // Method 2: Fallback to scanning all spans for city/country patterns
                             if (!locationFound) {
-                                $('a[href*="-Egypt"], a[href*="-Cairo"], a[href*="-Giza"], a[href*="-Alexandria"]').each((_, el) => {
+                                $('span, div').each((_, el) => {
                                     const text = $(el).text().trim();
-                                    const href = $(el).attr('href') || '';
-                                    // Must be a location link, not a job type link
-                                    if (isValidLocation(text) && !href.includes('-Jobs') && !href.includes('/careers/')) {
-                                        locationFound = text;
-                                        return false; // Break
+                                    if (text && text.length > 3 && text.length < 60 && isValidText(text)) {
+                                        if (/Cairo|Giza|Alexandria|Egypt|October|Zayed/i.test(text) &&
+                                            !text.includes('Posted') && !text.includes('ago')) {
+                                            locationFound = text;
+                                            return false; // Break
+                                        }
                                     }
                                 });
                             }
@@ -495,44 +502,41 @@ async function main() {
                         }
 
                         if (!data.job_type) {
-                            // Priority 1: Use specific CSS selector span.css-uc9rga.eoyjyou0
+                            // Robust Job Type Extraction
                             const jobTypes = [];
 
-                            $('span.css-uc9rga.eoyjyou0, span.css-uc9rga').each((_, el) => {
+                            // Method 1: href patterns (Most reliable)
+                            const jobTypePatterns = {
+                                'Full Time': /Full-Time-Jobs/i,
+                                'Part Time': /Part-Time-Jobs/i,
+                                'Freelance': /Freelance.*Jobs/i,
+                                'Remote': /Remote-Jobs/i,
+                                'Internship': /Internship.*Jobs/i,
+                                'Work From Home': /Work.*From.*Home/i,
+                                'Shift Based': /Shift.*Based/i
+                            };
+
+                            $('a[href*="-Jobs"]').each((_, el) => {
+                                const href = $(el).attr('href') || '';
                                 const text = $(el).text().trim();
-                                if (text && text.length > 1 && text.length < 50 &&
-                                    !text.toLowerCase().includes('css') &&
-                                    !text.toLowerCase().includes('webkit') &&
-                                    !text.includes('{') && !text.includes('}')) {
-                                    if (!jobTypes.includes(text)) {
-                                        jobTypes.push(text);
+
+                                for (const [typeName, pattern] of Object.entries(jobTypePatterns)) {
+                                    if (pattern.test(href) && !jobTypes.includes(typeName)) {
+                                        if (text && text.length < 30 && isValidText(text)) {
+                                            jobTypes.push(typeName);
+                                        }
+                                        break;
                                     }
                                 }
                             });
 
-                            // Priority 2: Fallback to link patterns
+                            // Method 2: Text content search in spans (Fallback)
                             if (jobTypes.length === 0) {
-                                const jobTypePatterns = {
-                                    'Full Time': /Full-Time-Jobs/i,
-                                    'Part Time': /Part-Time-Jobs/i,
-                                    'Freelance': /Freelance.*Jobs/i,
-                                    'Remote': /Remote-Jobs/i,
-                                    'Internship': /Internship.*Jobs/i,
-                                    'Work From Home': /Work.*From.*Home/i,
-                                    'Shift Based': /Shift.*Based/i
-                                };
-
-                                $('a[href*="-Jobs"]').each((_, el) => {
-                                    const href = $(el).attr('href') || '';
+                                const commonTypes = ['Full Time', 'Part Time', 'Freelance', 'Remote', 'Internship'];
+                                $('span').each((_, el) => {
                                     const text = $(el).text().trim();
-
-                                    for (const [typeName, pattern] of Object.entries(jobTypePatterns)) {
-                                        if (pattern.test(href) && !jobTypes.includes(typeName)) {
-                                            if (text && text.length < 30 && !text.includes('css-')) {
-                                                jobTypes.push(typeName);
-                                            }
-                                            break;
-                                        }
+                                    if (commonTypes.includes(text)) {
+                                        if (!jobTypes.includes(text)) jobTypes.push(text);
                                     }
                                 });
                             }
@@ -697,25 +701,29 @@ async function main() {
                             });
                         });
 
-                        // Extract company logo
+                        // Extract company logo - Robust
                         let companyLogo = null;
-                        const logoImg = $('img.css-1in28d3').first();
+
+                        // Method 1: Try stable class seen in browser DOM (css-1rlnv46)
+                        const logoImg = $('img.css-1rlnv46, img.css-1in28d3').first();
                         if (logoImg.length) {
-                            companyLogo = logoImg.attr('src') || logoImg.attr('data-src') || null;
-                            // Make absolute URL if relative
-                            if (companyLogo && !companyLogo.startsWith('http')) {
-                                companyLogo = new URL(companyLogo, 'https://wuzzuf.net').href;
-                            }
+                            companyLogo = logoImg.attr('src') || logoImg.attr('data-src');
                         }
-                        // Fallback: try other img selectors in company section
+
+                        // Method 2: Look for image inside company link (fallback)
                         if (!companyLogo) {
-                            $('a[href*="/jobs/careers/"] img, div[class*="company"] img').each((_, img) => {
+                            $('a[href*="/jobs/careers/"] img').each((_, img) => {
                                 const src = $(img).attr('src') || $(img).attr('data-src');
                                 if (src && !src.includes('placeholder')) {
-                                    companyLogo = src.startsWith('http') ? src : new URL(src, 'https://wuzzuf.net').href;
-                                    return false; // Break
+                                    companyLogo = src;
+                                    return false;
                                 }
                             });
+                        }
+
+                        // URL normalization
+                        if (companyLogo && !companyLogo.startsWith('http')) {
+                            companyLogo = new URL(companyLogo, 'https://wuzzuf.net').href;
                         }
 
                         // Sanitize all text fields to remove CSS classes and HTML artifacts
