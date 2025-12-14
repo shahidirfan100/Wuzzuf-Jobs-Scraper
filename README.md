@@ -71,6 +71,12 @@ Configure the scraper using these parameters:
       <td>"Full Time", "Remote"</td>
     </tr>
     <tr>
+      <td><code>maxJobAge</code></td>
+      <td>String</td>
+      <td>Filter jobs by posting date age</td>
+      <td>"7 days", "30 days", "90 days", "all"</td>
+    </tr>
+    <tr>
       <td><code>startUrl</code></td>
       <td>String</td>
       <td>Custom Wuzzuf search URL (overrides other filters)</td>
@@ -110,6 +116,12 @@ Configure the scraper using these parameters:
       <td>Extract full job descriptions and details</td>
     </tr>
     <tr>
+      <td><code>maxJobAge</code></td>
+      <td>String</td>
+      <td>all</td>
+      <td>Only include jobs posted within specified time frame</td>
+    </tr>
+    <tr>
       <td><code>proxyConfiguration</code></td>
       <td>Object</td>
       <td>Residential</td>
@@ -127,6 +139,7 @@ Configure the scraper using these parameters:
   "category": "IT/Software Development",
   "careerLevel": "Experienced",
   "jobType": "Full Time",
+  "maxJobAge": "30 days",
   "results_wanted": 50,
   "max_pages": 5,
   "collectDetails": true
