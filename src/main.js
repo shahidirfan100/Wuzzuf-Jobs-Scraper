@@ -93,12 +93,29 @@ async function main() {
 
         const isValidText = (text) => {
             if (!text) return false;
-            // Check if text contains CSS artifacts
-            return !text.includes('css-') &&
-                !text.includes('{') &&
+            const lowerText = text.toLowerCase();
+            // Check if text contains CSS artifacts or web/styling keywords
+            const cssArtifacts = ['css-', 'webkit', '-moz-', '-ms-', '-o-',
+                'flex', 'display:', 'inline', 'margin', 'padding', 'height:', 'width:',
+                'position:', 'absolute', 'relative', 'fixed', 'color:', 'background',
+                'font-', 'border', 'overflow', 'transform', 'transition', 'animation',
+                'object-fit', 'object-position', 'justify-content', 'align-items',
+                'grid', 'block', 'none', 'auto', 'inherit', 'initial', 'unset',
+                'px', 'em', 'rem', 'vh', 'vw', '%', 'rgb', 'rgba', 'hsl', 'hsla', '#'];
+
+            // Check for CSS patterns
+            if (cssArtifacts.some(artifact => lowerText.includes(artifact))) {
+                return false;
+            }
+
+            // Additional checks for CSS-like patterns
+            return !text.includes('{') &&
                 !text.includes('}') &&
+                !text.includes(':') &&  // CSS property patterns
+                !text.includes(';') &&  // CSS statement endings
                 !text.startsWith('.') &&
                 !text.startsWith('#') &&
+                !/^\d+$/.test(text) &&  // Pure numbers
                 text.length > 1;
         };
 
@@ -385,40 +402,47 @@ async function main() {
                         }
 
                         if (!data.location) {
-                            // Look for location near company name or in specific patterns
-                            const locationCandidates = [];
+                            // Look for location near company name using specific patterns
+                            let locationFound = null;
 
-                            // Try element after company link - often contains location with dash
-                            const companyLink = $('a[href*="/jobs/careers/"]').first();
-                            if (companyLink.length) {
-                                // Check parent and siblings for location text
-                                const parent = companyLink.parent();
-                                const parentText = parent.text().trim();
-                                // Pattern: "Company Name - Location, Country" or just sibling text
-                                const match = parentText.match(/[-–—]\s*([A-Za-z][^-–—]*(?:,\s*[A-Za-z][^-–—]*)*)/i);
-                                if (match && match[1]) {
-                                    const location = match[1].trim();
-                                    if (location.length > 3 && location.length < 100 && isValidText(location)) {
-                                        locationCandidates.push(location);
+                            // Method 1: Look for links to location-based job searches
+                            $('a[href*="-Egypt"], a[href*="-Cairo"], a[href*="-Giza"], a[href*="-Alexandria"]').each((_, el) => {
+                                const text = $(el).text().trim();
+                                const href = $(el).attr('href') || '';
+                                // Must be a location link, not a job type link
+                                if (text && text.length > 2 && text.length < 50 &&
+                                    !href.includes('-Jobs') && !href.includes('/careers/') &&
+                                    !text.toLowerCase().includes('webkit') &&
+                                    !text.toLowerCase().includes('css') &&
+                                    !text.includes('{') && !text.includes(':')) {
+                                    locationFound = text;
+                                    return false; // Break
+                                }
+                            });
+
+                            // Method 2: Extract from company link parent text after dash
+                            if (!locationFound) {
+                                const companyLink = $('a[href*="/jobs/careers/"]').first();
+                                if (companyLink.length) {
+                                    const parent = companyLink.parent();
+                                    const parentText = parent.text().trim();
+                                    const companyName = companyLink.text().trim();
+                                    // Remove company name and look for location after dash
+                                    const afterCompany = parentText.replace(companyName, '').trim();
+                                    const match = afterCompany.match(/^\s*[-–—]\s*([A-Za-z][A-Za-z\s,]+)/i);
+                                    if (match && match[1]) {
+                                        const loc = match[1].trim();
+                                        if (loc.length > 2 && loc.length < 50 &&
+                                            !loc.toLowerCase().includes('webkit') &&
+                                            !loc.toLowerCase().includes('css') &&
+                                            !loc.includes('{') && !loc.includes(':')) {
+                                            locationFound = loc;
+                                        }
                                     }
                                 }
                             }
 
-                            // Fallback: Look for location patterns in spans
-                            $('span, div').each((_, el) => {
-                                const text = $(el).text().trim();
-                                // Match common location patterns (City, Country or just City)
-                                if (text && text.length > 3 && text.length < 100 &&
-                                    isValidText(text) &&
-                                    (text.includes('Egypt') || text.includes('Cairo') || text.includes('Giza') ||
-                                        text.includes('Alexandria') || text.includes('October'))) {
-                                    if (!locationCandidates.includes(text)) {
-                                        locationCandidates.push(text);
-                                    }
-                                }
-                            });
-
-                            data.location = locationCandidates.length > 0 ? locationCandidates[0] : null;
+                            data.location = locationFound;
                         }
 
                         if (!data.salary) {
