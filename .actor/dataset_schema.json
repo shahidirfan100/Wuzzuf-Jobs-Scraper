@@ -8,6 +8,7 @@
         "fields": [
           "title",
           "company",
+          "company_logo",
           "location",
           "salary",
           "job_type",
@@ -25,6 +26,10 @@
           "company": {
             "label": "Company",
             "format": "text"
+          },
+          "company_logo": {
+            "label": "Logo",
+            "format": "image"
           },
           "location": {
             "label": "Location",

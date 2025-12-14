@@ -37,6 +37,54 @@ async function main() {
             }
         };
 
+        const normalizeUrl = (rawUrl, base = BASE_URL) => {
+            if (!rawUrl) return null;
+            const trimmed = String(rawUrl).trim().replace(/&amp;/g, '&');
+            if (!trimmed || trimmed.startsWith('data:')) return null;
+            try {
+                const u = new URL(trimmed, base);
+                u.search = '';
+                u.hash = '';
+                return u.href;
+            } catch {
+                return null;
+            }
+        };
+
+        const normalizeLocation = (rawLocation) => {
+            if (!rawLocation) return null;
+            const cleaned = String(rawLocation)
+                .replace(/\s+/g, ' ')
+                .replace(/\s*[|•]\s*/g, ', ')
+                .replace(/\s*,\s*/g, ', ')
+                .trim();
+            return cleaned || null;
+        };
+
+        const extractLocationFromMeta = ($) => {
+            const locality = $('meta[property="og:locality"]').attr('content')?.trim();
+            const region = $('meta[property="og:region"]').attr('content')?.trim();
+            const country = (
+                $('meta[property="og:country-name"]').attr('content') ||
+                $('meta[property="og:country_name"]').attr('content') ||
+                $('meta[property="og:country"]').attr('content')
+            )?.trim();
+
+            const parts = [locality, region, country].map(normalizeLocation).filter(Boolean);
+            const deduped = [];
+            for (const part of parts) {
+                if (!deduped.some((p) => p.toLowerCase() === part.toLowerCase())) deduped.push(part);
+            }
+            return deduped.length ? deduped.join(', ') : null;
+        };
+
+        const extractLocationFromTitle = ($) => {
+            const titleText = $('title').first().text().replace(/\s+/g, ' ').trim();
+            if (!titleText) return null;
+            const m = titleText.match(/\s+in\s+(.+?)\s*(?:-|–|—)\s*Apply\b/i);
+            return m?.[1] ? normalizeLocation(m[1]) : null;
+        };
+
         const cleanText = (html) => {
             if (!html) return '';
             const $ = cheerioLoad(html);
@@ -228,13 +276,27 @@ async function main() {
                         if (!e) continue;
                         const t = e['@type'] || e.type;
                         if (t === 'JobPosting' || (Array.isArray(t) && t.includes('JobPosting'))) {
+                            const extractJsonLdLocation = (jobLocation) => {
+                                const locations = Array.isArray(jobLocation) ? jobLocation : (jobLocation ? [jobLocation] : []);
+                                for (const loc of locations) {
+                                    const addr = loc?.address || loc?.jobLocation?.address;
+                                    if (!addr) continue;
+                                    const locality = addr.addressLocality || null;
+                                    const region = addr.addressRegion || null;
+                                    const country = typeof addr.addressCountry === 'string'
+                                        ? addr.addressCountry
+                                        : (addr.addressCountry?.name || null);
+                                    const parts = [locality, region, country].map(normalizeLocation).filter(Boolean);
+                                    if (parts.length) return parts.join(', ');
+                                }
+                                return null;
+                            };
                             return {
                                 title: e.title || e.name || null,
                                 company: e.hiringOrganization?.name || null,
                                 date_posted: e.datePosted || null,
                                 description_html: e.description || null,
-                                location: e.jobLocation?.address?.addressLocality ||
-                                    e.jobLocation?.address?.addressRegion || null,
+                                location: extractJsonLdLocation(e.jobLocation) || null,
                                 salary: e.baseSalary?.value?.value || e.baseSalary?.value || null,
                                 job_type: e.employmentType || null,
                             };
@@ -426,6 +488,12 @@ async function main() {
                                 return true;
                             };
 
+                            // Priority 0: Meta tags + <title> (most stable across job pages)
+                            const metaLocation = extractLocationFromMeta($) || extractLocationFromTitle($);
+                            if (metaLocation && isValidLocation(metaLocation) && isValidText(metaLocation)) {
+                                locationFound = metaLocation;
+                            }
+
                             // Method 1: Robust extraction from text near company link (most stable)
                             const companyLink = $('a[href*="/jobs/careers/"]').first();
                             if (companyLink.length) {
@@ -434,24 +502,24 @@ async function main() {
                                 let potentialLoc = parentText.replace(companyName, '').trim();
 
                                 // Refinement: Split by delimiters to isolate location
-                                const parts = potentialLoc.split(/[-–—]/).map(p => p.trim()).filter(Boolean);
+                                const parts = potentialLoc.split(/\s*[–—-]\s*/).map(p => p.trim()).filter(Boolean);
                                 let bestMatch = null;
 
                                 // Check each part for location pattern
                                 for (const part of parts) {
                                     const clean = part.replace(/Posted.*$/i, '').replace(/Block.*$/i, '').replace(/Viewed.*$/i, '').trim();
                                     if (clean.length > 2 && clean.length < 50 && isValidText(clean)) {
-                                        if (clean.includes(',') || /Cairo|Giza|Alexandria|Egypt|October|Zayed|Maadi|Nasr City/i.test(clean)) {
+                                        if (clean.includes(',') || /remote|work from home|hybrid/i.test(clean)) {
                                             bestMatch = clean;
                                             break;
                                         }
                                     }
                                 }
 
-                                potentialLoc = bestMatch || potentialLoc.replace(/^[-–—]\s*/, '').replace(/Posted.*$/i, '').replace(/Block.*$/i, '').replace(/Viewed.*$/i, '').trim();
+                                potentialLoc = bestMatch || potentialLoc.replace(/^\s*[–—-]+\s*/, '').replace(/Posted.*$/i, '').replace(/Block.*$/i, '').replace(/Viewed.*$/i, '').trim();
 
                                 if (potentialLoc.length > 3 && potentialLoc.length < 50 && isValidText(potentialLoc)) {
-                                    if (potentialLoc.includes(',') || /Cairo|Giza|Alexandria|Egypt|October|Zayed|Maadi|Nasr City/i.test(potentialLoc)) {
+                                    if (potentialLoc.includes(',') || /remote|work from home|hybrid/i.test(potentialLoc)) {
                                         locationFound = potentialLoc;
                                     }
                                 }
@@ -461,12 +529,11 @@ async function main() {
                             if (!locationFound) {
                                 $('span, div').each((_, el) => {
                                     const text = $(el).text().trim();
-                                    if (text && text.length > 3 && text.length < 60 && isValidText(text)) {
-                                        if (/Cairo|Giza|Alexandria|Egypt|October|Zayed/i.test(text) &&
-                                            !text.includes('Posted') && !text.includes('ago')) {
-                                            locationFound = text;
-                                            return false; // Break
-                                        }
+                                    if (!isValidLocation(text) || !isValidText(text)) return;
+                                    if (text.includes('Posted') || text.includes('ago')) return;
+                                    if (text.includes(',') || /remote|work from home|hybrid/i.test(text)) {
+                                        locationFound = text;
+                                        return false; // Break
                                     }
                                 });
                             }
@@ -480,7 +547,7 @@ async function main() {
                                     const companyName = companyLink.text().trim();
                                     // Remove company name and look for location after dash
                                     const afterCompany = parentText.replace(companyName, '').trim();
-                                    const match = afterCompany.match(/^\s*[-–—]\s*([A-Za-z][A-Za-z\s,]+)/i);
+                                    const match = afterCompany.match(/^\s*[–—-]+\s*([^|•]+)\s*$/);
                                     if (match && match[1]) {
                                         const loc = match[1].trim();
                                         if (isValidLocation(loc)) {
@@ -720,32 +787,43 @@ async function main() {
                         // Extract company logo - Robust
                         let companyLogo = null;
 
+                        const extractLogoFromImg = (imgEl) => {
+                            if (!imgEl) return null;
+                            const attrs = ['src', 'data-src', 'data-lazy-src', 'data-original', 'srcset'];
+                            for (const attr of attrs) {
+                                const raw = $(imgEl).attr(attr);
+                                if (!raw) continue;
+                                if (attr === 'srcset') {
+                                    const firstCandidate = String(raw).split(',')[0]?.trim().split(/\s+/)[0];
+                                    const normalized = normalizeUrl(firstCandidate);
+                                    if (normalized) return normalized;
+                                    continue;
+                                }
+                                const normalized = normalizeUrl(raw);
+                                if (normalized) return normalized;
+                            }
+                            return null;
+                        };
+
                         // Method 1: Try stable class seen in browser DOM (css-1rlnv46)
                         const logoImg = $('img.css-1rlnv46, img.css-1in28d3').first();
                         if (logoImg.length) {
-                            companyLogo = logoImg.attr('src') || logoImg.attr('data-src');
+                            companyLogo = extractLogoFromImg(logoImg.get(0));
                         }
 
                         // Method 2: Look for image inside company link (fallback)
                         if (!companyLogo) {
                             $('a[href*="/jobs/careers/"] img').each((_, img) => {
-                                const src = $(img).attr('src') || $(img).attr('data-src');
-                                if (src && !src.includes('placeholder')) {
-                                    companyLogo = src;
-                                    return false;
+                                const candidate = extractLogoFromImg(img);
+                                if (candidate && !candidate.includes('placeholder')) {
+                                    companyLogo = candidate;
+                                    return false; // break
                                 }
                             });
                         }
 
-                        // Clean query parameters to keep only the logo URL (e.g. remove ?v=...)
-                        if (companyLogo && companyLogo.includes('?')) {
-                            companyLogo = companyLogo.split('?')[0];
-                        }
-
-                        // URL normalization
-                        if (companyLogo && !companyLogo.startsWith('http')) {
-                            companyLogo = new URL(companyLogo, 'https://wuzzuf.net').href;
-                        }
+                        // Final normalization (ensures no query params / data: URIs)
+                        companyLogo = normalizeUrl(companyLogo);
 
                         // Sanitize all text fields to remove CSS classes and HTML artifacts
                         const item = {
