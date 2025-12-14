@@ -369,40 +369,56 @@ async function main() {
                                 $('h1').first().text().trim() || null;
                         }
 
-                        if (!data.company || !data.location) {
-                            // Extract company and location from strong.css-1vlp604
-                            // First element is company, second is location
-                            const strongElements = $('strong.css-1vlp604');
+                        if (!data.company) {
+                            // Extract company name - find link with /jobs/careers/ in href
+                            $('a[href*="/jobs/careers/"]').each((_, el) => {
+                                const href = $(el).attr('href');
+                                const text = $(el).text().trim();
 
-                            if (!data.company && strongElements.length >= 1) {
-                                const companyText = $(strongElements[0]).text().trim();
-                                if (companyText && companyText.length > 1 && companyText.length < 100 && isValidText(companyText)) {
-                                    data.company = companyText;
+                                if (text && text.length > 1 && text.length < 100 && isValidText(text) && href && href.includes('/jobs/careers/')) {
+                                    data.company = text;
+                                    return false; // Break the loop
                                 }
-                            }
-
-                            if (!data.location && strongElements.length >= 2) {
-                                const locationText = $(strongElements[1]).text().trim();
-                                if (locationText && locationText.length > 1 && locationText.length < 100 && isValidText(locationText)) {
-                                    data.location = locationText;
-                                }
-                            }
-
-                            // Fallback: Try link with /jobs/careers/ for company if not found
-                            if (!data.company) {
-                                $('a[href*="/jobs/careers/"]').each((_, el) => {
-                                    const href = $(el).attr('href');
-                                    const text = $(el).text().trim();
-
-                                    if (text && text.length > 1 && text.length < 100 && isValidText(text) && href && href.includes('/jobs/careers/')) {
-                                        data.company = text;
-                                        return false; // Break the loop
-                                    }
-                                });
-                            }
+                            });
 
                             data.company = data.company || null;
-                            data.location = data.location || null;
+                        }
+
+                        if (!data.location) {
+                            // Look for location near company name or in specific patterns
+                            const locationCandidates = [];
+
+                            // Try element after company link - often contains location with dash
+                            const companyLink = $('a[href*="/jobs/careers/"]').first();
+                            if (companyLink.length) {
+                                // Check parent and siblings for location text
+                                const parent = companyLink.parent();
+                                const parentText = parent.text().trim();
+                                // Pattern: "Company Name - Location, Country" or just sibling text
+                                const match = parentText.match(/[-–—]\s*([A-Za-z][^-–—]*(?:,\s*[A-Za-z][^-–—]*)*)/i);
+                                if (match && match[1]) {
+                                    const location = match[1].trim();
+                                    if (location.length > 3 && location.length < 100 && isValidText(location)) {
+                                        locationCandidates.push(location);
+                                    }
+                                }
+                            }
+
+                            // Fallback: Look for location patterns in spans
+                            $('span, div').each((_, el) => {
+                                const text = $(el).text().trim();
+                                // Match common location patterns (City, Country or just City)
+                                if (text && text.length > 3 && text.length < 100 &&
+                                    isValidText(text) &&
+                                    (text.includes('Egypt') || text.includes('Cairo') || text.includes('Giza') ||
+                                        text.includes('Alexandria') || text.includes('October'))) {
+                                    if (!locationCandidates.includes(text)) {
+                                        locationCandidates.push(text);
+                                    }
+                                }
+                            });
+
+                            data.location = locationCandidates.length > 0 ? locationCandidates[0] : null;
                         }
 
                         if (!data.salary) {
@@ -487,12 +503,23 @@ async function main() {
                             data.date_posted = data.date_posted || null;
                         }
 
-                        // Extract job category from ul.css-h5dsne
+                        // Extract job category from links with /a/...-Jobs pattern
                         const jobCategories = [];
-                        $('ul.css-h5dsne li a, ul.css-h5dsne a').each((_, el) => {
-                            const categoryText = $(el).text().trim();
-                            if (categoryText && categoryText.length > 1 && categoryText.length < 100 && isValidText(categoryText)) {
-                                jobCategories.push(categoryText);
+                        const excludePatterns = ['Full-Time', 'Part-Time', 'Freelance', 'Remote', 'Internship',
+                            'Work-From-Home', 'Shift-Based', 'Entry-Level', 'Experienced', 'Manager',
+                            'Senior-Management', 'Student'];
+
+                        $('a[href*="/a/"][href*="-Jobs"]').each((_, el) => {
+                            const href = $(el).attr('href') || '';
+                            const text = $(el).text().trim();
+
+                            // Exclude job type and career level links
+                            const isExcluded = excludePatterns.some(pattern => href.includes(pattern));
+
+                            if (text && text.length > 1 && text.length < 50 && isValidText(text) && !isExcluded) {
+                                if (!jobCategories.includes(text)) {
+                                    jobCategories.push(text);
+                                }
                             }
                         });
                         data.job_category = jobCategories.length > 0 ? jobCategories : null;
@@ -580,13 +607,31 @@ async function main() {
                             }
                         }
 
-                        // Extract skills from div.css-qe7mba
+                        // Extract skills - use multiple fallback selectors
                         const skills = [];
-                        $('div.css-qe7mba a, div.css-qe7mba span, a[data-qa="skill-tag"]').each((_, el) => {
+                        const addedSkills = new Set();
+
+                        // Priority 1: data-qa attribute (most reliable)
+                        $('a[data-qa="skill-tag"]').each((_, el) => {
                             const skill = $(el).text().trim();
-                            if (skill && skill.length > 0 && skill.length < 100 && isValidText(skill)) {
+                            if (skill && skill.length > 0 && skill.length < 100 && isValidText(skill) && !addedSkills.has(skill.toLowerCase())) {
                                 skills.push(skill);
+                                addedSkills.add(skill.toLowerCase());
                             }
+                        });
+
+                        // Priority 2: Look for skill-related sections with span content  
+                        $('h4:contains("Skills")').each((_, h4) => {
+                            $(h4).parent().find('span, a').each((_, el) => {
+                                const skill = $(el).text().trim();
+                                if (skill && skill.length > 1 && skill.length < 50 && isValidText(skill) && !addedSkills.has(skill.toLowerCase())) {
+                                    // Avoid adding the header itself
+                                    if (skill.toLowerCase() !== 'skills' && skill.toLowerCase() !== 'skills and tools:') {
+                                        skills.push(skill);
+                                        addedSkills.add(skill.toLowerCase());
+                                    }
+                                }
+                            });
                         });
 
                         // Sanitize all text fields to remove CSS classes and HTML artifacts
