@@ -697,10 +697,32 @@ async function main() {
                             });
                         });
 
+                        // Extract company logo
+                        let companyLogo = null;
+                        const logoImg = $('img.css-1in28d3').first();
+                        if (logoImg.length) {
+                            companyLogo = logoImg.attr('src') || logoImg.attr('data-src') || null;
+                            // Make absolute URL if relative
+                            if (companyLogo && !companyLogo.startsWith('http')) {
+                                companyLogo = new URL(companyLogo, 'https://wuzzuf.net').href;
+                            }
+                        }
+                        // Fallback: try other img selectors in company section
+                        if (!companyLogo) {
+                            $('a[href*="/jobs/careers/"] img, div[class*="company"] img').each((_, img) => {
+                                const src = $(img).attr('src') || $(img).attr('data-src');
+                                if (src && !src.includes('placeholder')) {
+                                    companyLogo = src.startsWith('http') ? src : new URL(src, 'https://wuzzuf.net').href;
+                                    return false; // Break
+                                }
+                            });
+                        }
+
                         // Sanitize all text fields to remove CSS classes and HTML artifacts
                         const item = {
                             title: sanitizeText(data.title),
                             company: sanitizeText(data.company),
+                            company_logo: companyLogo,
                             location: sanitizeText(data.location),
                             salary: sanitizeText(data.salary) || 'Not disclosed',
                             job_type: sanitizeText(data.job_type),
