@@ -6,6 +6,6 @@
   "jobType": "",
   "maxJobAge": "30 days",
   "results_wanted": 20,
-  "max_pages": 2,
+  "max_pages": 10,
   "collectDetails": true
 }

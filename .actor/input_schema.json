@@ -47,10 +47,10 @@
     "max_pages": {
       "title": "Maximum number of pages",
       "type": "integer",
-      "description": "A safety cap on the number of search result pages to visit.",
+      "description": "Maximum search pages to visit. Each page has ~15 jobs. For 100 jobs, use at least 7 pages.",
       "minimum": 1,
       "editor": "number",
-      "default": 2
+      "default": 10
     },
     "collectDetails": {
       "title": "Collect job details",

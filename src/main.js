@@ -233,7 +233,12 @@ async function main() {
         };
 
         // QA Compliance: Input validation - ensure at least one search parameter is provided
-        const hasValidInput = startUrl || url || (Array.isArray(startUrls) && startUrls.length) || keyword;
+        const hasValidInput =
+            (startUrl && startUrl.trim()) ||
+            (url && url.trim()) ||
+            (Array.isArray(startUrls) && startUrls.length > 0 && startUrls.some(u => u && u.trim())) ||
+            (keyword && keyword.trim());
+
         if (!hasValidInput) {
             log.warning('No search parameters provided. Please provide at least a keyword or startUrl.');
             await Dataset.pushData({
@@ -398,17 +403,22 @@ async function main() {
                     const links = findJobLinks($, request.url);
                     crawlerLog.info(`Found ${links.length} job links on page ${pageNo}`);
 
-                    // QA Compliance: Early exit if no jobs found on first page
+                    // QA Compliance: Early exit only if no jobs found on first page AND no more pages to check
                     if (pageNo === 1 && links.length === 0) {
-                        crawlerLog.warning('No job links found on first page. Search may be too specific or no results available.');
-                        await Dataset.pushData({
-                            status: 'no_results',
-                            message: 'No jobs found for the given search criteria',
-                            search_url: request.url,
-                            timestamp: new Date().toISOString(),
-                        });
-                        crawlerLog.info('Exiting gracefully - no results found');
-                        return;
+                        crawlerLog.warning('No job links found on first page.');
+                        // Only exit if this is truly the first page and there are no results
+                        // Don't exit if we're just starting - let pagination try other pages
+                        const nextPageExists = findNextPage($, request.url, pageNo);
+                        if (!nextPageExists) {
+                            await Dataset.pushData({
+                                status: 'no_results',
+                                message: 'No jobs found for the given search criteria',
+                                search_url: request.url,
+                                timestamp: new Date().toISOString(),
+                            });
+                            crawlerLog.info('Exiting gracefully - no results found and no more pages');
+                            return;
+                        }
                     }
 
                     if (collectDetails && links.length > 0) {
