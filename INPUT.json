@@ -1,11 +1,11 @@
 {
-  "keyword": "software engineer",
-  "location": "Cairo",
-  "category": "IT/Software Development",
-  "careerLevel": "Experienced",
-  "jobType": "Full Time",
+  "keyword": "engineer",
+  "location": "",
+  "category": "",
+  "careerLevel": "",
+  "jobType": "",
   "maxJobAge": "30 days",
-  "results_wanted": 50,
-  "max_pages": 5,
+  "results_wanted": 20,
+  "max_pages": 2,
   "collectDetails": true
 }

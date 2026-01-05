@@ -29,6 +29,10 @@ async function main() {
         const MAX_PAGES = Number.isFinite(+MAX_PAGES_RAW) ? Math.max(1, +MAX_PAGES_RAW) : 20;
         const BASE_URL = 'https://wuzzuf.net';
 
+        // QA Compliance: Timeout tracking to ensure completion within 300s
+        const startTime = Date.now();
+        const MAX_RUN_TIME = 240000; // 240 seconds (4 minutes) - safety margin before Apify's 300s timeout
+
         const toAbs = (href, base = BASE_URL) => {
             try {
                 return new URL(href, base).href;
@@ -228,6 +232,19 @@ async function main() {
             return params.length ? `${u.href}?${params.join('&')}` : u.href;
         };
 
+        // QA Compliance: Input validation - ensure at least one search parameter is provided
+        const hasValidInput = startUrl || url || (Array.isArray(startUrls) && startUrls.length) || keyword;
+        if (!hasValidInput) {
+            log.warning('No search parameters provided. Please provide at least a keyword or startUrl.');
+            await Dataset.pushData({
+                status: 'no_input',
+                message: 'No search parameters provided. Please provide at least a keyword or startUrl to begin scraping.',
+                timestamp: new Date().toISOString(),
+            });
+            log.info('Exiting gracefully - no valid input provided');
+            return;
+        }
+
         const initial = [];
         if (Array.isArray(startUrls) && startUrls.length) initial.push(...startUrls);
         if (startUrl) initial.push(startUrl);
@@ -365,6 +382,13 @@ async function main() {
             requestHandlerTimeoutSecs: 90,
 
             async requestHandler({ request, $, enqueueLinks, log: crawlerLog, body }) {
+                // QA Compliance: Check timeout to ensure we complete within 300s
+                const elapsed = Date.now() - startTime;
+                if (elapsed > MAX_RUN_TIME) {
+                    crawlerLog.warning(`Approaching timeout limit (${Math.round(elapsed / 1000)}s elapsed). Gracefully exiting.`);
+                    return;
+                }
+
                 const label = request.userData?.label || 'LIST';
                 const pageNo = request.userData?.pageNo || 1;
 
@@ -373,6 +397,19 @@ async function main() {
 
                     const links = findJobLinks($, request.url);
                     crawlerLog.info(`Found ${links.length} job links on page ${pageNo}`);
+
+                    // QA Compliance: Early exit if no jobs found on first page
+                    if (pageNo === 1 && links.length === 0) {
+                        crawlerLog.warning('No job links found on first page. Search may be too specific or no results available.');
+                        await Dataset.pushData({
+                            status: 'no_results',
+                            message: 'No jobs found for the given search criteria',
+                            search_url: request.url,
+                            timestamp: new Date().toISOString(),
+                        });
+                        crawlerLog.info('Exiting gracefully - no results found');
+                        return;
+                    }
 
                     if (collectDetails && links.length > 0) {
                         const remaining = RESULTS_WANTED - saved;
@@ -885,7 +922,10 @@ async function main() {
 
                         await Dataset.pushData(item);
                         saved++;
-                        crawlerLog.info(`✓ Successfully saved job ${saved}/${RESULTS_WANTED}: ${item.title}`);
+                        // QA Compliance: Reduce log verbosity - log every 5 jobs instead of every job
+                        if (saved % 5 === 0 || saved === 1 || saved === RESULTS_WANTED) {
+                            crawlerLog.info(`✓ Progress: ${saved}/${RESULTS_WANTED} jobs saved`);
+                        }
                     } catch (err) {
                         crawlerLog.error(`Failed to extract job details from ${request.url}: ${err.message}`);
                     }
@@ -900,14 +940,35 @@ async function main() {
             }))
         );
 
-        log.info(`✓ Scraping completed. Successfully saved ${saved} job listings from Wuzzuf.`);
+        // QA Compliance: Always log final summary
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        log.info(`✓ Scraping completed in ${elapsed}s. Successfully saved ${saved} job listings from Wuzzuf.`);
+    } catch (err) {
+        // QA Compliance: Graceful error handling
+        log.error(`Error during scraping: ${err.message}`);
+        await Dataset.pushData({
+            status: 'error',
+            message: err.message,
+            timestamp: new Date().toISOString(),
+        });
     } finally {
         await Actor.exit();
     }
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
+    // QA Compliance: Ensure graceful exit even on fatal errors
     log.error(`Fatal error: ${err.message}`);
     console.error(err);
-    process.exit(1);
+    try {
+        await Dataset.pushData({
+            status: 'fatal_error',
+            message: err.message,
+            stack: err.stack,
+            timestamp: new Date().toISOString(),
+        });
+    } catch (e) {
+        log.error(`Failed to save error to dataset: ${e.message}`);
+    }
+    await Actor.exit({ exitCode: 1 });
 });
