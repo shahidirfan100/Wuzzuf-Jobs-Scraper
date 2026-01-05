@@ -145,26 +145,31 @@ async function main() {
 
         const isValidText = (text) => {
             if (!text) return false;
-            const lowerText = text.toLowerCase();
-            // Check if text contains CSS artifacts or web/styling keywords
-            const cssArtifacts = ['css-', 'webkit', '-moz-', '-ms-', '-o-',
-                'flex', 'display:', 'inline', 'margin', 'padding', 'height:', 'width:',
-                'position:', 'absolute', 'relative', 'fixed', 'color:', 'background',
-                'font-', 'border', 'overflow', 'transform', 'transition', 'animation',
-                'object-fit', 'object-position', 'justify-content', 'align-items',
-                'grid', 'block', 'none', 'auto', 'inherit', 'initial', 'unset',
-                'px', 'em', 'rem', 'vh', 'vw', '%', 'rgb', 'rgba', 'hsl', 'hsla', '#'];
 
-            // Check for CSS patterns
-            if (cssArtifacts.some(artifact => lowerText.includes(artifact))) {
+            // Only check for obvious CSS artifacts, not common words
+            const strictCssPatterns = [
+                'css-',           // CSS class names
+                'webkit',         // Browser prefixes
+                '-moz-',
+                '-ms-',
+                'display:',       // CSS properties (with colon)
+                'position:',
+                'margin:',
+                'padding:',
+                'object-fit',
+                'object-position'
+            ];
+
+            const lowerText = text.toLowerCase();
+
+            // Check for strict CSS patterns only
+            if (strictCssPatterns.some(pattern => lowerText.includes(pattern))) {
                 return false;
             }
 
-            // Additional checks for CSS-like patterns
+            // Check for CSS-like structure patterns
             return !text.includes('{') &&
                 !text.includes('}') &&
-                !text.includes(':') &&  // CSS property patterns
-                !text.includes(';') &&  // CSS statement endings
                 !text.startsWith('.') &&
                 !text.startsWith('#') &&
                 !/^\d+$/.test(text) &&  // Pure numbers
@@ -360,7 +365,10 @@ async function main() {
         }
 
         function findNextPage($, base, currentPage) {
-            // Wuzzuf pagination pattern
+            // Wuzzuf pagination pattern:
+            // Page 1: no 'start' parameter
+            // Page 2: start=1
+            // Page 3: start=2, etc.
             const nextPage = currentPage + 1;
 
             // Check for next button
@@ -374,8 +382,9 @@ async function main() {
             }
 
             // Build next page URL manually
+            // For page 2, use start=1; for page 3, use start=2, etc.
             const currentUrl = new URL(base);
-            currentUrl.searchParams.set('start', String(nextPage * 15)); // Wuzzuf shows 15 jobs per page
+            currentUrl.searchParams.set('start', String(currentPage)); // currentPage, not nextPage
             return currentUrl.href;
         }
 
@@ -450,17 +459,14 @@ async function main() {
                         }
                     }
 
-                    // Handle pagination
-                    if (saved < RESULTS_WANTED && pageNo < MAX_PAGES && links.length > 0) {
+                    // Handle pagination - continue even if current page has no links
+                    if (saved < RESULTS_WANTED && pageNo < MAX_PAGES) {
                         const next = findNextPage($, request.url, pageNo);
                         if (next) {
-                            crawlerLog.info(`Enqueueing next page: ${pageNo + 1}`);
                             await enqueueLinks({
                                 urls: [next],
                                 userData: { label: 'LIST', pageNo: pageNo + 1 },
                             });
-                        } else {
-                            crawlerLog.info('No more pages found');
                         }
                     }
                     return;
@@ -473,16 +479,8 @@ async function main() {
                     }
 
                     try {
-                        crawlerLog.info(`Extracting job details from ${request.url}`);
-
-                        // Try JSON-LD first
+                        // Try JSON-LD first (no logging to reduce verbosity)
                         let data = extractFromJsonLd($);
-
-                        if (data && data.title) {
-                            crawlerLog.info(`Successfully extracted data from JSON-LD: ${data.title}`);
-                        } else {
-                            crawlerLog.info('No JSON-LD data found, using HTML extraction');
-                        }
 
                         if (!data) {
                             data = {};

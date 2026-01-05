@@ -33,7 +33,7 @@
         "90 days",
         "all"
       ],
-      "default": "30 days",
+      "default": "all",
       "editor": "select"
     },
     "results_wanted": {

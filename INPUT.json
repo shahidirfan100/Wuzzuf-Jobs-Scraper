@@ -4,7 +4,7 @@
   "category": "",
   "careerLevel": "",
   "jobType": "",
-  "maxJobAge": "30 days",
+  "maxJobAge": "all",
   "results_wanted": 20,
   "max_pages": 10,
   "collectDetails": true
